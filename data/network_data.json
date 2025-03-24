@@ -1,0 +1,77 @@
+{
+  "nodes": [
+    {
+      "id": "growerA",
+      "type": "grower",
+      "capacity": 1000.0,
+      "waste_rate": 0.05
+    },
+    {
+      "id": "growerB",
+      "type": "grower",
+      "capacity": 800.0,
+      "waste_rate": 0.04
+    },
+    {
+      "id": "distributor1",
+      "type": "distributor",
+      "capacity": 1500.0,
+      "waste_rate": 0.03
+    },
+    {
+      "id": "distributor2",
+      "type": "distributor",
+      "capacity": 1200.0,
+      "waste_rate": 0.035
+    },
+    {
+      "id": "distributor3",
+      "type": "distributor",
+      "capacity": 1000.0,
+      "waste_rate": 0.025
+    },
+    {
+      "id": "store",
+      "type": "store",
+      "capacity": 2000.0,
+      "waste_rate": 0.08
+    }
+  ],
+  "edges": [
+    {
+      "source": "growerA",
+      "target": "distributor1",
+      "flow_capacity": 500.0,
+      "transport_waste": 0.02,
+      "transport_time": 2.0
+    },
+    {
+      "source": "distributor1",
+      "target": "store",
+      "flow_capacity": 400.0,
+      "transport_waste": 0.015,
+      "transport_time": 1.5
+    },
+    {
+      "source": "growerB",
+      "target": "distributor3",
+      "flow_capacity": 400.0,
+      "transport_waste": 0.025,
+      "transport_time": 2.5
+    },
+    {
+      "source": "distributor3",
+      "target": "distributor2",
+      "flow_capacity": 350.0,
+      "transport_waste": 0.02,
+      "transport_time": 1.0
+    },
+    {
+      "source": "distributor2",
+      "target": "store",
+      "flow_capacity": 300.0,
+      "transport_waste": 0.015,
+      "transport_time": 1.0
+    }
+  ]
+}
