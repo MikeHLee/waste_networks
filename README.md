@@ -65,6 +65,58 @@ result = causal_net.fit_regression(
 
 ## Understanding the Output
 
+### Network Visualizations
+
+#### 1. Advanced Network Visualization (advanced_network_visualization.png)
+This visualization provides a comprehensive view of the entire network structure:
+
+- **Node Types** (indicated by color):
+  * Light Green: Initial Producers (farms, suppliers)
+  * Light Blue: Food Processors (cleaning, packaging)
+  * Orange: Food Handlers (warehouses, storage)
+  * Pink: End Consumers (stores, markets)
+  * Purple: Service Providers (cold chain, transport)
+
+- **Edge Types** (indicated by style):
+  * Solid Blue: Inventory Flow (shows mass and value)
+  * Dashed Red: Service Flow (shows service type and effect)
+  * Dotted Green: Currency Flow (shows amount and currency type)
+
+- **Node Labels** contain:
+  * Node name
+  * Waste function details:
+    - Static waste: Fixed percentage
+    - Time-based waste: Base rate + time coefficient
+    - Multi-variable waste: Temperature/humidity effects
+  * For service providers: Effect percentages
+
+- **Edge Labels** show:
+  * For inventory: Mass and value
+  * For services: Service type and effect size
+  * For currency: Amount and currency type
+
+- **Network Statistics** (top-right box):
+  * Total node count
+  * Total edge count
+  * Count by node type
+  * Network density
+
+#### 2. Path Waste Analysis (network_visualization.png)
+This visualization focuses on waste analysis along a specific path:
+
+- **Top Panel: Network Path**
+  * Same color coding as advanced visualization
+  * Yellow highlighted path shows the analyzed route
+  * Edge thickness indicates flow volume
+  * Node size indicates relative importance
+
+- **Bottom Panel: Waste Breakdown**
+  * Bar chart showing waste percentage at each location
+  * X-axis: Location names
+  * Y-axis: Waste percentage
+  * Bar labels: Exact waste percentages
+  * Total waste annotation (top-right)
+
 ### Regression Results (regression_results.txt)
 
 The regression analysis output contains:
@@ -79,9 +131,7 @@ The regression analysis output contains:
 3. Sample Predictions:
    - Example scenarios with predicted loss percentages
 
-### Visualizations
-
-#### 1. Loss vs Storage Time (loss_vs_storage.png)
+### Loss vs Storage Time (loss_vs_storage.png)
 - X-axis: Storage time in days
 - Y-axis: Loss percentage
 - Blue dots: Actual data points
@@ -90,13 +140,13 @@ The regression analysis output contains:
 - Text box: Effect size and confidence interval
 - R² score in title
 
-#### 2. Loss vs Temperature (loss_vs_temperature.png)
+### Loss vs Temperature (loss_vs_temperature.png)
 - X-axis: Temperature in °C
 - Y-axis: Loss percentage
 - Similar elements to storage time plot
 - Shows temperature's impact on loss
 
-#### 3. Causal Network Graph (causal_graph.png)
+### Causal Network Graph (causal_graph.png)
 - Node Colors:
   * Light blue: Cause variables
   * Light green: Effect variables
@@ -123,6 +173,7 @@ The regression analysis output contains:
 ## Examples
 
 See the `examples/` directory for detailed examples:
+- `network_visualization.py`: Demonstrates network structure and path analysis
 - `advanced_regression.py`: Demonstrates inventory loss analysis
 - More examples coming soon...
 
