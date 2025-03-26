@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle, Circle, FancyArrowPatch
 from .advanced_network import (
     NodeType, EdgeType, AdvancedNode, AdvancedEdge,
-    InventoryEdge, ServiceEdge, CurrencyEdge
+    InventoryEdge, ServiceEdge, CurrencyEdge, RegressionResult
 )
 
 def create_node_style(node_type: NodeType) -> Dict[str, Any]:
@@ -48,17 +48,20 @@ def create_edge_style(edge_type: EdgeType) -> Dict[str, Any]:
         EdgeType.INVENTORY: {
             'style': 'solid',
             'color': '#2C3E50',  # Dark blue
-            'width': 2
+            'width': 3,  # Increased width
+            'arrowsize': 15  # Added arrow size
         },
         EdgeType.SERVICE: {
             'style': 'dashed',
             'color': '#8E44AD',  # Purple
-            'width': 1.5
+            'width': 2,  # Increased width
+            'arrowsize': 12  # Added arrow size
         },
         EdgeType.CURRENCY: {
             'style': 'dotted',
             'color': '#27AE60',  # Green
-            'width': 1.5
+            'width': 2,  # Increased width
+            'arrowsize': 12  # Added arrow size
         }
     }
     return styles[edge_type]
@@ -151,7 +154,8 @@ def visualize_network(
     title: str = "Waste Network Visualization",
     node_wastes: Optional[Dict[str, float]] = None,
     edge_wastes: Optional[Dict[Tuple[str, str], float]] = None,
-    highlight_path: Optional[List[str]] = None
+    highlight_path: Optional[List[str]] = None,
+    regression_results: Optional[Dict[str, RegressionResult]] = None
 ) -> plt.Figure:
     """Create an annotated visualization of the network."""
     fig, ax = plt.subplots(figsize=(12, 8))
@@ -192,7 +196,7 @@ def visualize_network(
         arrow = FancyArrowPatch(
             pos[source],
             pos[target],
-            arrowstyle='-|>',
+            arrowstyle=f'-|>,head_length={style["arrowsize"]},head_width={style["arrowsize"]/1.5}',
             connectionstyle='arc3,rad=0.2',
             color=style['color'],
             linestyle=style['style'],
@@ -218,6 +222,22 @@ def visualize_network(
                 alpha=0.5
             )
             ax.add_patch(arrow)
+    
+    # Add regression results if available
+    if regression_results:
+        for var, result in regression_results.items():
+            bbox_props = dict(boxstyle="round,pad=0.5", fc="white", ec="gray", alpha=0.9)
+            summary = f"{var} Regression:\n"
+            for coef, (mean, std) in result.coefficients.items():
+                summary += f"{coef}: {mean:.3f} ± {std:.3f}\n"
+            summary += f"R² = {result.r2_score:.3f}"
+            
+            # Position at top of plot
+            ax.text(0.02, 0.98, summary,
+                   transform=ax.transAxes,
+                   verticalalignment='top',
+                   bbox=bbox_props,
+                   fontsize=8)
     
     # Set plot limits and title
     ax.set_xlim((-1.2, 1.2))

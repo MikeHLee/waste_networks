@@ -59,66 +59,33 @@ class WasteCausalNetwork:
     def build_model(self):
         """Build a PyMC model based on the network structure."""
         with pm.Model() as self.model:
-            # Create variables dictionary to store PyMC variables
-            self.variables = {}
+            # Create variables for each feature
+            feature_vars = {}
+            for col in self.data.columns:
+                if col != 'waste':  # Skip target variable
+                    feature_vars[col] = pm.Normal(
+                        col,
+                        mu=self.data[col].mean(),
+                        sigma=self.data[col].std(),
+                        observed=self.data[col].values
+                    )
             
-            # First pass: Create all root nodes (nodes with no parents)
-            for node in self.graph.nodes():
-                if len(list(self.graph.predecessors(node))) == 0:
-                    node_data = self.graph.nodes[node]
-                    dist = node_data['distribution']
-                    params = node_data['params']
-                    
-                    if dist == 'normal':
-                        if node in self.data.columns:
-                            # Observed variable
-                            self.variables[node] = pm.Normal(
-                                node,
-                                mu=params.get('mu', 0.0),
-                                sigma=params.get('sigma', 1.0),
-                                observed=self.data[node].values
-                            )
-                        else:
-                            # Latent variable
-                            self.variables[node] = pm.Normal(
-                                node,
-                                mu=params.get('mu', 0.0),
-                                sigma=params.get('sigma', 1.0)
-                            )
+            # Create coefficients
+            intercept = pm.Normal('intercept', mu=0, sigma=10)
+            coeffs = {
+                col: pm.Normal(f'beta_{col}', mu=0, sigma=2)
+                for col in feature_vars.keys()
+            }
             
-            # Second pass: Create all other nodes in topological order
-            for node in nx.topological_sort(self.graph):
-                if node not in self.variables:  # Skip if already created
-                    node_data = self.graph.nodes[node]
-                    dist = node_data['distribution']
-                    params = node_data['params']
-                    
-                    # Get parent nodes and their effect sizes
-                    parents = list(self.graph.predecessors(node))
-                    parent_effects = [self.graph[p][node]['effect_size'] 
-                                    for p in parents]
-                    
-                    # Calculate mean based on parents
-                    parent_terms = sum(self.variables[p] * effect 
-                                    for p, effect in zip(parents, parent_effects))
-                    
-                    if dist == 'normal':
-                        if node in self.data.columns:
-                            # Observed variable
-                            self.variables[node] = pm.Normal(
-                                node,
-                                mu=parent_terms,
-                                sigma=params.get('sigma', 1.0),
-                                observed=self.data[node].values
-                            )
-                        else:
-                            # Latent variable
-                            self.variables[node] = pm.Normal(
-                                node,
-                                mu=parent_terms,
-                                sigma=params.get('sigma', 1.0)
-                            )
-        
+            # Linear combination
+            mu = intercept
+            for col, coeff in coeffs.items():
+                mu = mu + coeff * feature_vars[col]
+            
+            # Likelihood
+            sigma = pm.HalfNormal('sigma', sigma=1)
+            waste = pm.Normal('waste', mu=mu, sigma=sigma, observed=self.data['waste'])
+            
     def fit(self, samples=2000):
         """Fit the Bayesian model using MCMC."""
         if self.model is None:
@@ -127,6 +94,50 @@ class WasteCausalNetwork:
         with self.model:
             self.trace = pm.sample(samples, tune=1000)
             
+            # Extract regression results
+            coefficients = {}
+            for var in self.model.named_vars:
+                if var.startswith('beta_') or var == 'intercept':
+                    trace_vals = self.trace.posterior[var].values.flatten()
+                    coefficients[var.replace('beta_', '')] = (float(trace_vals.mean()), float(trace_vals.std()))
+            
+            # Calculate predictions
+            X = self.data.drop('waste', axis=1)
+            predictions = (
+                coefficients['intercept'][0] +
+                sum(coefficients[col][0] * X[col] for col in X.columns)
+            )
+            
+            # Calculate prediction intervals
+            residuals = self.data['waste'] - predictions
+            std_residuals = residuals.std()
+            prediction_intervals = np.column_stack([
+                predictions - 1.96 * std_residuals,
+                predictions + 1.96 * std_residuals
+            ])
+            
+            # Calculate R² score
+            r2 = 1 - (residuals ** 2).sum() / ((self.data['waste'] - self.data['waste'].mean()) ** 2).sum()
+            
+            # Create model summary
+            summary = (
+                f"Model Summary:\n"
+                f"Number of observations: {len(self.data)}\n"
+                f"R² score: {r2:.3f}\n"
+                f"Residual std: {std_residuals:.3f}"
+            )
+            
+            # Store regression results
+            self.regression_results = {
+                'waste': RegressionResult(
+                    coefficients=coefficients,
+                    predictions=predictions,
+                    prediction_intervals=prediction_intervals,
+                    r2_score=r2,
+                    model_summary=summary
+                )
+            }
+        
     def get_causal_effect(self, cause: str, effect: str) -> Tuple[float, float]:
         """
         Calculate the causal effect between two variables.

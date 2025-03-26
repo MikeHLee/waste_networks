@@ -11,6 +11,8 @@ from dataclasses import dataclass
 from abc import ABC, abstractmethod
 from collections import defaultdict
 import matplotlib.pyplot as plt
+from matplotlib.patches import FancyArrowPatch, Rectangle, Circle
+from .causal_analysis import WasteCausalNetwork, RegressionResult
 
 class NodeType(Enum):
     SOLUTION_PROVIDER = "solution_provider"
@@ -29,6 +31,7 @@ class FlowType(Enum):
     FOOD = "food"
     CURRENCY = "currency"
     SERVICE = "service"
+    INVENTORY = "inventory"  # General inventory flow type for analysis
 
 @dataclass
 class Inventory:
@@ -70,6 +73,33 @@ class MultiVariableWaste(WasteFunction):
     def calculate(self, **kwargs) -> float:
         return self.func(**kwargs)
 
+class CausalWasteFunction:
+    """Waste function based on causal regression model."""
+    def __init__(self, regression_result: RegressionResult):
+        self.regression = regression_result
+        
+    def __call__(self, **features) -> float:
+        """Calculate waste based on input features.
+        
+        Args:
+            **features: Feature values matching regression model variables
+        Returns:
+            Predicted waste value
+        """
+        # Ensure all required features are provided
+        required_features = set(self.regression.coefficients.keys()) - {'intercept'}
+        if not all(f in features for f in required_features):
+            raise ValueError(f"Missing required features: {required_features - set(features.keys())}")
+            
+        # Calculate prediction using regression coefficients
+        waste = self.regression.coefficients.get('intercept', (0.0, 0.0))[0]
+        for feature, value in features.items():
+            if feature in self.regression.coefficients:
+                coef = self.regression.coefficients[feature][0]  # Use mean coefficient
+                waste += coef * value
+                
+        return max(0.0, min(1.0, waste))  # Clamp to valid waste range
+
 class AdvancedNode:
     """Base class for all node types in the advanced network."""
     def __init__(self, node_id: str, node_type: NodeType):
@@ -78,16 +108,27 @@ class AdvancedNode:
         self.input_inventory: Dict[str, Inventory] = {}
         self.output_inventory: Dict[str, Inventory] = {}
         self.holding_periods: Dict[str, float] = {}
-        self.waste_function: WasteFunction = StaticWaste(0.0)
+        self.waste_function = None
+        self.features = {}  # Current feature values
         self.activities: Dict[str, Dict[str, float]] = {}  # Activity -> {cost, revenue}
 
     def add_activity(self, name: str, cost: float, revenue: float):
         """Add an activity with associated costs and revenues."""
         self.activities[name] = {"cost": cost, "revenue": revenue}
 
-    def set_waste_function(self, waste_func: WasteFunction):
-        """Set the waste calculation function for this node."""
-        self.waste_function = waste_func
+    def set_waste_function(self, regression_result: RegressionResult):
+        """Set waste function from regression results."""
+        self.waste_function = CausalWasteFunction(regression_result)
+        
+    def set_features(self, **features):
+        """Update current feature values."""
+        self.features.update(features)
+        
+    def calculate_waste(self) -> float:
+        """Calculate current waste based on features."""
+        if self.waste_function is None:
+            return 0.0
+        return self.waste_function(**self.features)
 
 class SolutionProvider(AdvancedNode):
     """Node that provides services affecting edge costs."""
@@ -129,7 +170,22 @@ class AdvancedEdge:
     """Base class for all edge types in the advanced network."""
     def __init__(self, edge_type: EdgeType):
         self.edge_type = edge_type
-        self.waste_function: WasteFunction = StaticWaste(0.0)
+        self.waste_function = None
+        self.features = {}
+        
+    def set_waste_function(self, regression_result: RegressionResult):
+        """Set waste function from regression results."""
+        self.waste_function = CausalWasteFunction(regression_result)
+        
+    def set_features(self, **features):
+        """Update current feature values."""
+        self.features.update(features)
+        
+    def calculate_waste(self) -> float:
+        """Calculate current waste based on features."""
+        if self.waste_function is None:
+            return 0.0
+        return self.waste_function(**self.features)
 
 class InventoryEdge(AdvancedEdge):
     """Edge representing inventory transfer."""
@@ -182,7 +238,8 @@ class AdvancedWasteNetwork:
         edge_type = {
             FlowType.FOOD: EdgeType.INVENTORY,
             FlowType.CURRENCY: EdgeType.CURRENCY,
-            FlowType.SERVICE: EdgeType.SERVICE
+            FlowType.SERVICE: EdgeType.SERVICE,
+            FlowType.INVENTORY: EdgeType.INVENTORY
         }[flow_type]
         
         for source, target, edge_data in self.graph.edges(data=True):
@@ -199,6 +256,11 @@ class AdvancedWasteNetwork:
                      if data.node_type == NodeType.INITIAL_PRODUCER]
             ends = [n for n, data in self.nodes.items() 
                    if data.node_type == NodeType.END_CONSUMER]
+        elif flow_type == FlowType.INVENTORY:
+            starts = [n for n, data in self.nodes.items() 
+                     if data.node_type not in [NodeType.END_CONSUMER]]
+            ends = [n for n, data in self.nodes.items() 
+                   if data.node_type not in [NodeType.INITIAL_PRODUCER]]
         else:
             starts = list(self.nodes.keys())
             ends = list(self.nodes.keys())
@@ -208,94 +270,60 @@ class AdvancedWasteNetwork:
     def combine_parallel_edges(
         self,
         edges: List[AdvancedEdge],
-        cost_func: Optional[Callable[[List[AdvancedEdge]], float]] = None
+        cost_func: Optional[Callable] = None
     ) -> float:
-        """Combine parallel edges into a single cost."""
-        if not cost_func:
-            # Default cost function: average of waste rates
-            return np.mean([edge.waste_function.calculate() for edge in edges])
-        return cost_func(edges)
+        """Combine costs of parallel edges."""
+        if cost_func:
+            return cost_func(edges)
+        
+        # Default to average waste
+        return np.mean([edge.calculate_waste() for edge in edges])
     
     def find_minimum_path(
         self,
         flow_type: FlowType,
         sources: Optional[List[str]] = None,
         targets: Optional[List[str]] = None,
-        cost_func: Optional[Callable[[List[AdvancedEdge]], float]] = None,
+        cost_func: Optional[Callable] = None,
         capacity_constraints: Optional[Dict[str, float]] = None
     ) -> List[Tuple[List[str], float]]:
-        """Find minimum cost paths between sources and targets.
+        """Find minimum cost paths between sources and targets."""
+        # Create a new graph for path finding
+        G = nx.DiGraph()
         
-        Args:
-            flow_type: Type of flow to analyze
-            sources: List of source nodes (if None, uses valid start nodes)
-            targets: List of target nodes (if None, uses valid end nodes)
-            cost_func: Custom function to combine parallel edge costs
-            capacity_constraints: Node capacity requirements {node_id: required_capacity}
-            
-        Returns:
-            List of (path, cost) tuples satisfying the constraints
-        """
-        # Get valid endpoints if not specified
-        valid_starts, valid_ends = self.get_valid_endpoints(flow_type)
-        sources = sources or valid_starts
-        targets = targets or valid_ends
+        # Add nodes and edges based on flow type
+        for node_id, node in self.nodes.items():
+            G.add_node(node_id)
         
-        # Validate endpoints
-        if not all(s in valid_starts for s in sources):
-            raise ValueError(f"Invalid source nodes for {flow_type.value} flow")
-        if not all(t in valid_ends for t in targets):
-            raise ValueError(f"Invalid target nodes for {flow_type.value} flow")
-            
-        # Get relevant edges
-        edges_by_type = self.get_edges_by_type(flow_type)
+        for (u, v, data) in self.graph.edges(data=True):
+            edge = data['edge']
+            if edge.edge_type == flow_type:
+                G.add_edge(u, v, weight=edge.calculate_waste())
         
-        # Create a new graph for pathfinding
-        path_graph = nx.DiGraph()
+        # Get default sources and targets if not specified
+        if sources is None:
+            sources = [n for n, d in self.graph.nodes(data=True)
+                      if isinstance(self.nodes[n], InitialProducer)]
+        if targets is None:
+            targets = [n for n, d in self.graph.nodes(data=True)
+                      if isinstance(self.nodes[n], EndConsumer)]
         
-        # Add edges with combined costs
-        for (source, target), edges in edges_by_type.items():
-            cost = self.combine_parallel_edges(edges, cost_func)
-            path_graph.add_edge(source, target, weight=cost)
-            
-        # Find paths satisfying constraints
+        # Find shortest paths
         paths = []
         for source in sources:
             for target in targets:
                 try:
-                    path = nx.shortest_path(
-                        path_graph,
-                        source=source,
-                        target=target,
-                        weight='weight'
-                    )
-                    cost = nx.shortest_path_length(
-                        path_graph,
-                        source=source,
-                        target=target,
-                        weight='weight'
-                    )
-                    
-                    # Check capacity constraints
-                    if capacity_constraints:
-                        satisfies_capacity = True
-                        for node in path:
-                            if node in capacity_constraints:
-                                node_edges = [e for e in edges_by_type.values()
-                                           if isinstance(e[0], InventoryEdge)]
-                                available_capacity = sum(e.capacity for e in node_edges)
-                                if available_capacity < capacity_constraints[node]:
-                                    satisfies_capacity = False
-                                    break
-                        if not satisfies_capacity:
-                            continue
-                            
+                    path = nx.shortest_path(G, source, target, weight='weight')
+                    cost = sum(G[path[i]][path[i+1]]['weight'] 
+                             for i in range(len(path)-1))
                     paths.append((path, cost))
                 except nx.NetworkXNoPath:
                     continue
-                    
-        return sorted(paths, key=lambda x: x[1])
-    
+        
+        # Sort by cost
+        paths.sort(key=lambda x: x[1])
+        return paths
+
     def calculate_path_waste(
         self,
         path: List[str],
@@ -316,7 +344,7 @@ class AdvancedWasteNetwork:
             if humidity is not None:
                 params["humidity"] = humidity
                 
-            node_waste = self.nodes[node].waste_function.calculate(**params)
+            node_waste = self.nodes[node].calculate_waste()
             total_waste += node_waste
             waste_breakdown[node] = node_waste
             
@@ -329,7 +357,7 @@ class AdvancedWasteNetwork:
             for _, _, edge_data in self.graph.edges(data=True):
                 edge = edge_data['edge']
                 if isinstance(edge, InventoryEdge):
-                    edge_waste = edge.waste_function.calculate(**params)
+                    edge_waste = edge.calculate_waste()
                     total_waste += edge_waste
                     
             if edge_waste > 0:
@@ -337,114 +365,139 @@ class AdvancedWasteNetwork:
                     
         return total_waste, waste_breakdown
 
-    def visualize_network(self, highlight_path=None, save_path=None, ax=None):
+    def visualize_network(
+        self,
+        highlight_path: Optional[List[str]] = None,
+        save_path: Optional[str] = None,
+        ax: Optional[plt.Axes] = None,
+        regression_results: Optional[Dict[str, RegressionResult]] = None
+    ) -> Optional[plt.Axes]:
         """Create a detailed visualization of the network with annotations."""
         if ax is None:
-            fig, ax = plt.subplots(figsize=(15, 10))
+            _, ax = plt.subplots(figsize=(15, 10))
+            
+        # Create layout
         pos = nx.spring_layout(self.graph, k=2)
         
-        # Collect node types
-        producers = [n for n, d in self.graph.nodes(data=True) if isinstance(self.nodes[n], InitialProducer)]
-        processors = [n for n, d in self.graph.nodes(data=True) if isinstance(self.nodes[n], FoodProcessor)]
-        handlers = [n for n, d in self.graph.nodes(data=True) if isinstance(self.nodes[n], FoodHandler)]
-        consumers = [n for n, d in self.graph.nodes(data=True) if isinstance(self.nodes[n], EndConsumer)]
-        providers = [n for n, d in self.graph.nodes(data=True) if isinstance(self.nodes[n], SolutionProvider)]
-        
-        # Draw nodes with different colors and sizes based on type
-        node_size = 3000
-        nx.draw_networkx_nodes(self.graph, pos, nodelist=producers, node_color='lightgreen',
-                             node_size=node_size, alpha=0.7, label='Producers', ax=ax)
-        nx.draw_networkx_nodes(self.graph, pos, nodelist=processors, node_color='lightblue',
-                             node_size=node_size, alpha=0.7, label='Processors', ax=ax)
-        nx.draw_networkx_nodes(self.graph, pos, nodelist=handlers, node_color='orange',
-                             node_size=node_size, alpha=0.7, label='Handlers', ax=ax)
-        nx.draw_networkx_nodes(self.graph, pos, nodelist=consumers, node_color='pink',
-                             node_size=node_size, alpha=0.7, label='Consumers', ax=ax)
-        nx.draw_networkx_nodes(self.graph, pos, nodelist=providers, node_color='purple',
-                             node_size=node_size, alpha=0.7, label='Service Providers', ax=ax)
-        
-        # Draw edges with different styles based on type
-        edges = self.graph.edges(data=True)
-        inventory_edges = [(u, v) for u, v, d in edges if isinstance(d.get('edge'), InventoryEdge)]
-        service_edges = [(u, v) for u, v, d in edges if isinstance(d.get('edge'), ServiceEdge)]
-        currency_edges = [(u, v) for u, v, d in edges if isinstance(d.get('edge'), CurrencyEdge)]
-        
-        # Draw edges with different styles and colors
-        nx.draw_networkx_edges(self.graph, pos, edgelist=inventory_edges, edge_color='blue',
-                             width=2, alpha=0.6, label='Inventory Flow', ax=ax)
-        nx.draw_networkx_edges(self.graph, pos, edgelist=service_edges, edge_color='red',
-                             width=2, style='dashed', alpha=0.6, label='Service Flow', ax=ax)
-        nx.draw_networkx_edges(self.graph, pos, edgelist=currency_edges, edge_color='green',
-                             width=2, style='dotted', alpha=0.6, label='Currency Flow', ax=ax)
-        
-        # Highlight path if provided
-        if highlight_path:
-            path_edges = list(zip(highlight_path[:-1], highlight_path[1:]))
-            nx.draw_networkx_edges(self.graph, pos, edgelist=path_edges,
-                                 edge_color='yellow', width=4, alpha=0.5,
-                                 label='Highlighted Path', ax=ax)
-        
-        # Add node labels with waste information
-        labels = {}
-        for node in self.graph.nodes():
-            node_obj = self.nodes[node]
-            waste_info = ""
-            if hasattr(node_obj, 'waste_function'):
-                if isinstance(node_obj.waste_function, StaticWaste):
-                    waste_info = f"\nWaste: {node_obj.waste_function.fraction:.1%}"
-                elif isinstance(node_obj.waste_function, TimeBasedWaste):
-                    waste_info = f"\nBase: {node_obj.waste_function.base_rate:.1%}\nTime: +{node_obj.waste_function.time_coefficient:.1%}/h"
+        # Draw nodes
+        for node_id, node in self.nodes.items():
+            color = '#BAE1FF' if node_id in (highlight_path or []) else '#E8F8F5'
+            if node.node_type == NodeType.SOLUTION_PROVIDER:
+                shape = 'rectangle'
+                size = 2000
+            else:
+                shape = 'circle'
+                size = 1500
+                
+            if shape == 'rectangle':
+                rect = Rectangle(
+                    (pos[node_id][0] - 0.05, pos[node_id][1] - 0.05),
+                    0.1, 0.1,
+                    facecolor=color,
+                    edgecolor='black'
+                )
+                ax.add_patch(rect)
+            else:
+                circle = Circle(
+                    pos[node_id],
+                    radius=0.05,
+                    facecolor=color,
+                    edgecolor='black'
+                )
+                ax.add_patch(circle)
+                
+            # Add node label
+            ax.annotate(
+                f"{node.node_type.value}\n{node_id}",
+                pos[node_id],
+                xytext=(0, 20),
+                textcoords="offset points",
+                ha='center',
+                va='bottom',
+                bbox=dict(boxstyle='round,pad=0.5', fc='white', alpha=0.8)
+            )
             
-            if isinstance(node_obj, SolutionProvider):
-                effects = [f"{k}: {v:.1%}" for k, v in node_obj.service_effects.items()]
-                waste_info = f"\nEffects:\n" + "\n".join(effects)
+            # Add waste value if available
+            if hasattr(node, 'calculate_waste'):
+                waste = node.calculate_waste()
+                if waste > 0:
+                    ax.annotate(
+                        f"Waste: {waste:.1%}",
+                        pos[node_id],
+                        xytext=(0, -20),
+                        textcoords="offset points",
+                        ha='center',
+                        va='top',
+                        bbox=dict(boxstyle='round,pad=0.5', fc='#FFE4E1', alpha=0.8)
+                    )
+        
+        # Draw edges
+        for source, target, edge_data in self.graph.edges(data=True):
+            edge = edge_data['edge']
+            color = '#4CAF50' if source in (highlight_path or []) and target in (highlight_path or []) else '#2C3E50'
+            style = '--' if edge.edge_type == EdgeType.SERVICE else '-'
+            width = 3 if edge.edge_type == EdgeType.INVENTORY else 2
             
-            labels[node] = f"{node}{waste_info}"
+            # Draw edge
+            arrow = FancyArrowPatch(
+                posA=pos[source],
+                posB=pos[target],
+                arrowstyle=f'-|>,head_length=15,head_width=10',
+                connectionstyle='arc3,rad=0.2',
+                color=color,
+                linestyle=style,
+                linewidth=width
+            )
+            ax.add_patch(arrow)
+            
+            # Add edge label
+            mid_point = ((pos[source][0] + pos[target][0])/2, (pos[source][1] + pos[target][1])/2)
+            edge_label = edge.edge_type.value
+            if hasattr(edge, 'calculate_waste'):
+                waste = edge.calculate_waste()
+                if waste > 0:
+                    edge_label += f"\nWaste: {waste:.1%}"
+            
+            ax.annotate(
+                edge_label,
+                mid_point,
+                xytext=(0, 10),
+                textcoords="offset points",
+                ha='center',
+                va='bottom',
+                bbox=dict(boxstyle='round,pad=0.5', fc='white', alpha=0.8)
+            )
         
-        nx.draw_networkx_labels(self.graph, pos, labels, font_size=8, ax=ax)
+        # Add regression results if available
+        if regression_results:
+            text_y = 0.98
+            for name, result in regression_results.items():
+                bbox_props = dict(boxstyle="round,pad=0.5", fc="white", ec="gray", alpha=0.9)
+                summary = f"{name} Model:\n"
+                for var, (coef, std) in result.coefficients.items():
+                    summary += f"{var}: {coef:.3f} ± {std:.3f}\n"
+                summary += f"R² = {result.r2_score:.3f}"
+                
+                # Position at top of plot
+                ax.text(0.02, text_y, summary,
+                       transform=ax.transAxes,
+                       verticalalignment='top',
+                       bbox=bbox_props,
+                       fontsize=8)
+                text_y -= 0.15  # Offset for next model
         
-        # Add edge labels with flow information
-        edge_labels = {}
-        for u, v, data in self.graph.edges(data=True):
-            edge_obj = data.get('edge')
-            if isinstance(edge_obj, InventoryEdge):
-                if edge_obj.current_flow:
-                    edge_labels[(u, v)] = f"Mass: {edge_obj.current_flow.mass:.1f}\nValue: {edge_obj.current_flow.value:.1f}"
-            elif isinstance(edge_obj, ServiceEdge):
-                edge_labels[(u, v)] = f"Service: {edge_obj.service_name}\nEffect: {edge_obj.effect_multiplier:.1%}"
-            elif isinstance(edge_obj, CurrencyEdge):
-                edge_labels[(u, v)] = f"{edge_obj.currency_type}\n{edge_obj.amount:.1f}"
-        
-        nx.draw_networkx_edge_labels(self.graph, pos, edge_labels, font_size=6, ax=ax)
-        
-        # Add title and legend
-        ax.set_title("Advanced Waste Network\nNode colors indicate type, edge styles show flow type",
-                    pad=20, fontsize=14)
-        ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
-        
-        # Add annotations for network statistics
-        stats_text = (
-            f"Network Statistics:\n"
-            f"Nodes: {self.graph.number_of_nodes()}\n"
-            f"Edges: {self.graph.number_of_edges()}\n"
-            f"Producers: {len(producers)}\n"
-            f"Processors: {len(processors)}\n"
-            f"Handlers: {len(handlers)}\n"
-            f"Consumers: {len(consumers)}\n"
-            f"Service Providers: {len(providers)}"
-        )
-        ax.text(1.1, 0.95, stats_text, transform=ax.transAxes,
-                bbox=dict(facecolor='white', alpha=0.8),
-                verticalalignment='top')
-        
-        # Adjust layout and display
+        # Set plot limits and title
+        ax.set_xlim((-1.2, 1.2))
+        ax.set_ylim((-1.2, 1.2))
+        ax.set_title("Waste Network Analysis")
         ax.axis('off')
         
         if save_path:
             plt.savefig(save_path, dpi=300, bbox_inches='tight')
             plt.close()
-        else:
-            return ax.get_figure()
+            return None
+            
+        return ax
 
     def visualize_path_waste(self, path, save_path=None):
         """Create a visualization focusing on waste along a specific path."""

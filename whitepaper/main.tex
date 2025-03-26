@@ -37,7 +37,25 @@ This paper presents a comprehensive framework for analyzing waste in food system
 \end{abstract}
 
 \section{Introduction}
-Food system waste represents a complex challenge requiring sophisticated modeling approaches that capture the diverse actors, relationships, and dynamics involved. Traditional network models often simplify these systems, losing critical details about agent interactions, inventory transformations, and service provisions. This paper introduces an advanced network model that preserves these complexities while maintaining analytical tractability.
+The optimization of food system efficiency and reduction of waste represents a critical challenge in modern supply chain management. Traditional approaches often fail to capture the full complexity of these systems, leading to suboptimal solutions and missed opportunities for waste reduction.
+
+\subsection{Problem Statement and Motivation}
+Food waste is a complex, multi-faceted problem that impacts economic efficiency, environmental sustainability, and food security. Key challenges include:
+
+\begin{itemize}
+    \item \textbf{System Complexity}: Food systems involve numerous actors with diverse roles, constraints, and objectives. Traditional models often oversimplify these relationships.
+    \item \textbf{Dynamic Nature}: Food quality and waste generation change over time and depend on environmental conditions, making static models insufficient.
+    \item \textbf{Intervention Complexity}: The impact of waste reduction interventions is often difficult to quantify due to complex interactions between system components.
+    \item \textbf{Data Uncertainty}: Real-world measurements of waste and system parameters often contain significant uncertainty, requiring probabilistic approaches.
+\end{itemize}
+
+These challenges motivate our development of an advanced network model that can:
+\begin{itemize}
+    \item Capture the full complexity of multi-agent interactions
+    \item Model dynamic system evolution and environmental dependencies
+    \item Quantify the impact of interventions through causal analysis
+    \item Account for uncertainty through Bayesian methods
+\end{itemize}
 
 Our contributions include:
 \begin{itemize}
@@ -49,9 +67,40 @@ Our contributions include:
 \end{itemize}
 
 \section{Methodology}
+\subsection{Design Motivation}
+The design of our advanced network model addresses several key limitations in existing approaches:
+
+\begin{itemize}
+    \item \textbf{Limited Agent Representation}: Traditional models often treat all nodes identically, missing crucial differences in behavior and constraints between different types of food system actors.
+    
+    \item \textbf{Oversimplified Relationships}: Standard network models typically use simple edges, failing to capture the multiple types of relationships (inventory, services, currency) that exist in real food systems.
+    
+    \item \textbf{Static Analysis}: Most approaches use static snapshots, missing temporal dynamics and environmental dependencies that are crucial for understanding waste generation.
+    
+    \item \textbf{Deterministic Assumptions}: Traditional models often ignore uncertainty, leading to overconfident predictions and suboptimal interventions.
+\end{itemize}
+
+Our model addresses these limitations through:
+
+\begin{itemize}
+    \item \textbf{Specialized Node Types}: Each actor type (producer, processor, handler, etc.) has distinct properties and behaviors that reflect their real-world roles.
+    
+    \item \textbf{Multi-Edge Relationships}: We model multiple relationship types simultaneously, capturing the full complexity of system interactions.
+    
+    \item \textbf{Dynamic Analysis}: Our waste functions incorporate time and environmental dependencies, enabling analysis of system evolution.
+    
+    \item \textbf{Bayesian Framework}: We explicitly model uncertainty in all components, from waste generation to intervention effects.
+\end{itemize}
+
 \subsection{Advanced Network Model}
 \begin{definition}[Food System Network]
-A food system network is a directed multigraph $G = (V, E, S)$, where $V$ represents nodes, $E$ represents edges, and $S$ represents solution providers.
+A food system network is a directed multigraph $G = (V, E, S)$ where:
+\begin{itemize}
+    \item $V$ represents the set of actors (nodes) in the system
+    \item $E$ represents the set of relationships (edges) between actors
+    \item $S$ represents the set of solution providers that can modify system behavior
+\end{itemize}
+This structure enables modeling of complex relationships while maintaining analytical tractability.
 \end{definition}
 
 \begin{definition}[Node Types]
@@ -178,17 +227,31 @@ where $w_f$ is the waste mass.
 \end{lemma}
 
 \subsection{Bayesian Regression Analysis}
-We extend our causal analysis with Bayesian regression to predict and analyze waste patterns:
+Our Bayesian approach serves multiple purposes:
+
+\begin{itemize}
+    \item \textbf{Uncertainty Quantification}: By modeling parameters as distributions rather than point estimates, we capture uncertainty in our predictions and causal effects.
+    
+    \item \textbf{Prior Knowledge Integration}: The Bayesian framework allows incorporation of domain expertise through prior distributions.
+    
+    \item \textbf{Robust Inference}: Posterior distributions provide more reliable insights than point estimates, especially with limited data.
+\end{itemize}
 
 \begin{definition}[Bayesian Linear Regression]
 For target variable $y$ and features $X$, we model:
 \begin{align*}
-    y &\sim \mathcal{N}(\mu, \sigma^2) \\
-    \mu &= \alpha + X\beta \\
-    \alpha &\sim \mathcal{N}(0, 10^2) \\
-    \beta_j &\sim \mathcal{N}(0, 2^2) \\
-    \sigma &\sim \text{Half-Normal}(0, 1)
+    y &\sim \mathcal{N}(\mu, \sigma^2) \quad \text{(Likelihood)} \\
+    \mu &= \alpha + X\beta \quad \text{(Linear predictor)} \\
+    \alpha &\sim \mathcal{N}(0, 10^2) \quad \text{(Weakly informative prior)} \\
+    \beta_j &\sim \mathcal{N}(0, 2^2) \quad \text{(Regularizing prior)} \\
+    \sigma &\sim \text{Half-Normal}(0, 1) \quad \text{(Scale prior)}
 \end{align*}
+This model enables:
+\begin{itemize}
+    \item Prediction of waste quantities with uncertainty estimates
+    \item Identification of significant predictors through posterior distributions
+    \item Robust handling of outliers and missing data
+\end{itemize}
 \end{definition}
 
 \begin{definition}[Bayesian Logistic Regression]
@@ -210,7 +273,33 @@ where parameters are estimated from the posterior distribution.
 \end{theorem}
 
 \section{Results}
-\subsection{Network Analysis}
+\subsection{Implementation Overview}
+Our implementation demonstrates the practical applicability of the theoretical framework through:
+
+\begin{itemize}
+    \item \textbf{Python-based Network Model}: 
+    \begin{itemize}
+        \item Built on NetworkX for efficient graph operations
+        \item Custom node and edge classes for specialized behavior
+        \item Optimized algorithms for large-scale networks
+    \end{itemize}
+    
+    \item \textbf{Visualization System}: 
+    \begin{itemize}
+        \item Interactive network visualization using D3.js
+        \item Color-coding of flow types and waste levels
+        \item Dynamic updates for temporal analysis
+    \end{itemize}
+    
+    \item \textbf{Causal Analysis Pipeline}:
+    \begin{itemize}
+        \item PyMC3 integration for Bayesian inference
+        \item MCMC sampling for posterior estimation
+        \item Convergence diagnostics and model validation
+    \end{itemize}
+\end{itemize}
+
+\subsection{Experimental Results}
 Analysis of our advanced network revealed:
 \begin{itemize}
     \item Total system waste: 59.5\%
@@ -258,6 +347,20 @@ Analysis of our advanced network revealed:
 \end{tikzpicture}
 \caption{Advanced Food System Network with Multiple Edge Types}
 \label{fig:network}
+\end{figure}
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.8\textwidth]{../data/network_visualization.png}
+\caption{Network visualization with flow types and waste annotations. Edge thickness indicates flow volume.}
+\label{fig:network_viz}
+\end{figure}
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.8\textwidth]{../data/causal_network.png}
+\caption{Bayesian regression results showing causal effects of key variables on waste reduction.}
+\label{fig:causal_analysis}
 \end{figure}
 
 \subsection{Causal Effects}

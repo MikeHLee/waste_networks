@@ -2,6 +2,38 @@
 
 A comprehensive library for analyzing waste in supply chain networks using advanced network analysis and causal inference.
 
+## What is This?
+
+Think of a food supply chain as a complex web of relationships between different players: farmers, processors, warehouses, stores, and service providers. Each connection in this web can lead to food waste, but understanding exactly how and why waste occurs is challenging. This tool helps solve that challenge by:
+
+1. **Mapping the Network**: Creating a digital twin of your supply chain that shows how food, services, and money flow between different players
+2. **Finding Waste Hotspots**: Using advanced math to identify where waste is most likely to occur
+3. **Understanding Causes**: Using AI and statistics to figure out what factors (like storage time or temperature) most affect waste
+4. **Testing Solutions**: Allowing you to simulate different solutions (like better cold storage) to see their impact
+
+## Key Concepts
+
+### Players in the Network
+
+- **Initial Producers** (e.g., farms): Where food enters the system
+- **Food Processors** (e.g., packaging facilities): Where food is transformed
+- **Food Handlers** (e.g., warehouses): Where food is stored and moved
+- **End Consumers** (e.g., stores): Where food exits the system
+- **Service Providers** (e.g., cold chain services): Who help reduce waste
+
+### Types of Connections
+
+- **Inventory Flow** (solid blue lines): Shows how food moves
+- **Service Flow** (dashed red lines): Shows who's helping who
+- **Currency Flow** (dotted green lines): Shows how money moves
+
+### Waste Calculation
+
+We calculate waste in three ways:
+1. **Static**: Fixed percentage (e.g., 5% always lost)
+2. **Time-based**: Increases with time (e.g., 1% per day)
+3. **Multi-factor**: Based on conditions (e.g., temperature, humidity)
+
 ## Features
 
 - Advanced network model with flow-specific path finding
@@ -22,160 +54,85 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-## Usage
-
-### Basic Network Analysis
-
-```python
-from src.advanced_network import AdvancedWasteNetwork, AdvancedNode
-from src.causal_analysis import WasteCausalNetwork
-
-# Create network
-network = AdvancedWasteNetwork()
-
-# Add nodes and edges
-farm = AdvancedNode("farm", node_type="producer")
-warehouse = AdvancedNode("warehouse", node_type="storage")
-network.add_node(farm)
-network.add_node(warehouse)
-network.add_edge(farm, warehouse, edge_type="inventory")
-```
-
-### Causal Analysis and Regression
-
-```python
-# Initialize causal network
-causal_net = WasteCausalNetwork()
-
-# Add variables
-causal_net.add_node('storage_time', 'cause', 'normal')
-causal_net.add_node('temperature', 'cause', 'normal')
-causal_net.add_node('loss_percentage', 'effect', 'normal')
-
-# Add relationships
-causal_net.add_edge('storage_time', 'loss_percentage', 0.5)
-causal_net.add_edge('temperature', 'loss_percentage', 0.3)
-
-# Fit regression model
-result = causal_net.fit_regression(
-    target='loss_percentage',
-    features=['storage_time', 'temperature']
-)
-```
-
 ## Understanding the Output
 
-### Network Visualizations
+### 1. Network Map (network_visualization.png)
 
-#### 1. Advanced Network Visualization (advanced_network_visualization.png)
-This visualization provides a comprehensive view of the entire network structure:
+This is like a Google Maps for your supply chain:
+- Each dot (node) is a player in your system
+- Lines between dots show how they're connected
+- Colors tell you what type of player each dot represents
+- Line styles show what's flowing between players
 
-- **Node Types** (indicated by color):
-  * Light Green: Initial Producers (farms, suppliers)
-  * Light Blue: Food Processors (cleaning, packaging)
-  * Orange: Food Handlers (warehouses, storage)
-  * Pink: End Consumers (stores, markets)
-  * Purple: Service Providers (cold chain, transport)
+Key things to look for:
+- Thicker lines = more flow
+- Red highlights = potential problem areas
+- Numbers on lines = amount of waste
 
-- **Edge Types** (indicated by style):
-  * Solid Blue: Inventory Flow (shows mass and value)
-  * Dashed Red: Service Flow (shows service type and effect)
-  * Dotted Green: Currency Flow (shows amount and currency type)
+### 2. Waste Analysis (waste_breakdown.png)
 
-- **Node Labels** contain:
-  * Node name
-  * Waste function details:
-    - Static waste: Fixed percentage
-    - Time-based waste: Base rate + time coefficient
-    - Multi-variable waste: Temperature/humidity effects
-  * For service providers: Effect percentages
+This chart shows where waste is happening:
+- Each bar represents a location
+- Height of bar shows how much waste occurs there
+- Colors match the network map for easy reference
+- Total waste shown at top
 
-- **Edge Labels** show:
-  * For inventory: Mass and value
-  * For services: Service type and effect size
-  * For currency: Amount and currency type
+### 3. Causal Analysis (causal_results.png)
 
-- **Network Statistics** (top-right box):
-  * Total node count
-  * Total edge count
-  * Count by node type
-  * Network density
+This helps understand why waste occurs:
+- Numbers show how strong each factor's effect is
+- Larger numbers = stronger effect
+- ± shows uncertainty in the measurement
+- R² score (0-1) shows how well we understand the system
 
-#### 2. Path Waste Analysis (network_visualization.png)
-This visualization focuses on waste analysis along a specific path:
-
-- **Top Panel: Network Path**
-  * Same color coding as advanced visualization
-  * Yellow highlighted path shows the analyzed route
-  * Edge thickness indicates flow volume
-  * Node size indicates relative importance
-
-- **Bottom Panel: Waste Breakdown**
-  * Bar chart showing waste percentage at each location
-  * X-axis: Location names
-  * Y-axis: Waste percentage
-  * Bar labels: Exact waste percentages
-  * Total waste annotation (top-right)
-
-### Regression Results (regression_results.txt)
-
-The regression analysis output contains:
-1. Model Summary:
-   - Number of observations
-   - Number of features
-   - R² score (measure of model fit, 0-1)
-2. Coefficients Table:
-   - Parameter names
-   - Mean (effect size)
-   - Standard deviation (uncertainty)
-3. Sample Predictions:
-   - Example scenarios with predicted loss percentages
-
-### Loss vs Storage Time (loss_vs_storage.png)
-- X-axis: Storage time in days
-- Y-axis: Loss percentage
-- Blue dots: Actual data points
-- Red line: Model predictions
-- Shaded area: 95% prediction interval
-- Text box: Effect size and confidence interval
-- R² score in title
-
-### Loss vs Temperature (loss_vs_temperature.png)
-- X-axis: Temperature in °C
-- Y-axis: Loss percentage
-- Similar elements to storage time plot
-- Shows temperature's impact on loss
-
-### Causal Network Graph (causal_graph.png)
-- Node Colors:
-  * Light blue: Cause variables
-  * Light green: Effect variables
-- Node Labels:
-  * Variable name
-  * β: Coefficient (effect size)
-  * σ: Standard deviation
-- Edges:
-  * Color: Red (strong effect) to Blue (weak effect)
-  * Width: Proportional to effect size
-  * Labels: β values showing relationship strength
-- Legend: Explains node types and edge meanings
-- R² score: Overall model fit
-
-### Interpreting Effect Sizes
-
-- β > 0: Positive relationship (increases cause increases in the effect)
-- β < 0: Negative relationship (increases cause decreases)
-- |β| ≈ 0: Weak or no relationship
-- Standard deviation (σ) indicates uncertainty:
-  * Small σ: More confident in the effect
-  * Large σ: Less confident
+Example interpretation:
+```
+Storage Time: 0.32 ± 0.017 (R² = 0.85)
+```
+Means:
+- Every day in storage increases waste by about 0.32%
+- We're quite certain (small ± number)
+- Our model explains 85% of waste variation (good fit)
 
 ## Examples
 
 See the `examples/` directory for detailed examples:
-- `network_visualization.py`: Demonstrates network structure and path analysis
-- `advanced_regression.py`: Demonstrates inventory loss analysis
-- More examples coming soon...
+
+### 1. Basic Network (basic_example.py)
+Shows how to:
+- Create a simple supply chain
+- Add basic waste calculations
+- Visualize the network
+
+### 2. Advanced Analysis (advanced_example.py)
+Shows how to:
+- Use causal analysis
+- Model complex relationships
+- Test different solutions
+
+### 3. Real-world Demo (real_world_demo.py)
+A complete example using:
+- Real-world-like data
+- Multiple node types
+- All flow types
+- Complex waste functions
+
+## How to Use Results
+
+1. **Find Problem Areas**
+   - Look for red highlights in network map
+   - Check highest bars in waste breakdown
+   - Focus on strongest effects in causal analysis
+
+2. **Choose Solutions**
+   - Use service providers where effects are strongest
+   - Optimize paths with least waste
+   - Target interventions based on causal factors
+
+3. **Monitor Progress**
+   - Track total system waste over time
+   - Watch for changes in causal factors
+   - Measure solution effectiveness
 
 ## Documentation
 
