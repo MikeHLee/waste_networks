@@ -6,9 +6,20 @@ import numpy as np
 import pandas as pd
 import networkx as nx
 import pymc as pm
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Tuple, Optional, Union, Callable
 import arviz as az
 from scipy import stats
+import matplotlib.pyplot as plt
+from dataclasses import dataclass
+
+@dataclass
+class RegressionResult:
+    """Container for regression results."""
+    coefficients: Dict[str, Tuple[float, float]]  # (mean, std)
+    predictions: np.ndarray
+    prediction_intervals: np.ndarray  # Shape (n_samples, 2) for lower and upper bounds
+    r2_score: float
+    model_summary: str
 
 class WasteCausalNetwork:
     def __init__(self):
@@ -18,7 +29,8 @@ class WasteCausalNetwork:
         self.model = None
         self.trace = None
         self.variables = {}
-        
+        self.regression_results = {}
+
     def add_node(self, node_id: str, node_type: str, 
                  distribution: str = 'normal',
                  params: Dict = None):
@@ -242,3 +254,229 @@ class WasteCausalNetwork:
         plt.title("Waste Causal Network")
         plt.axis('off')
         return plt
+
+    def fit_regression(
+        self,
+        target: str,
+        features: List[str],
+        model_type: str = 'linear',
+        link_function: Optional[Callable] = None,
+        samples: int = 2000
+    ) -> RegressionResult:
+        """
+        Fit a Bayesian regression model.
+        
+        Args:
+            target: Target variable name
+            features: List of feature variable names
+            model_type: Type of regression ('linear' or 'logistic')
+            link_function: Optional custom link function for GLM
+            samples: Number of MCMC samples
+            
+        Returns:
+            RegressionResult object containing coefficients, predictions, etc.
+        """
+        X = self.data[features].values
+        y = self.data[target].values
+        
+        with pm.Model() as model:
+            # Standardize features
+            X_standardized = (X - np.mean(X, axis=0)) / np.std(X, axis=0)
+            
+            # Priors for coefficients
+            alpha = pm.Normal('alpha', mu=0, sigma=10)
+            betas = pm.Normal('betas', mu=0, sigma=2, shape=len(features))
+            sigma = pm.HalfNormal('sigma', sigma=1)
+            
+            # Linear predictor
+            mu = alpha + pm.math.dot(X_standardized, betas)
+            
+            # Model type
+            if model_type == 'linear':
+                # Normal likelihood for linear regression
+                y_obs = pm.Normal('y_obs', mu=mu, sigma=sigma, observed=y)
+            elif model_type == 'logistic':
+                # Bernoulli likelihood with logistic link for classification
+                p = pm.math.sigmoid(mu) if link_function is None else link_function(mu)
+                y_obs = pm.Bernoulli('y_obs', p=p, observed=y)
+            else:
+                raise ValueError(f"Unknown model type: {model_type}")
+            
+            # Sample from posterior
+            trace = pm.sample(samples, tune=1000)
+            
+            # Get coefficient summaries
+            coef_means = {}
+            coef_stds = {}
+            
+            # Intercept
+            alpha_samples = trace.posterior['alpha'].values.flatten()
+            coef_means['intercept'] = np.mean(alpha_samples)
+            coef_stds['intercept'] = np.std(alpha_samples)
+            
+            # Feature coefficients
+            beta_samples = trace.posterior['betas'].values.reshape(-1, len(features))
+            for i, feature in enumerate(features):
+                coef_means[feature] = np.mean(beta_samples[:, i])
+                coef_stds[feature] = np.std(beta_samples[:, i])
+            
+            # Generate predictions
+            if model_type == 'linear':
+                y_pred = coef_means['intercept'] + np.dot(X_standardized, 
+                    [coef_means[f] for f in features])
+            else:
+                linear_pred = coef_means['intercept'] + np.dot(X_standardized,
+                    [coef_means[f] for f in features])
+                y_pred = 1 / (1 + np.exp(-linear_pred))
+            
+            # Calculate prediction intervals
+            pred_samples = np.zeros((len(y), samples))
+            for i in range(samples):
+                alpha_i = alpha_samples[i]
+                beta_i = beta_samples[i]
+                pred_i = alpha_i + np.dot(X_standardized, beta_i)
+                if model_type == 'logistic':
+                    pred_i = 1 / (1 + np.exp(-pred_i))
+                pred_samples[:, i] = pred_i
+            
+            pred_intervals = np.percentile(pred_samples, [2.5, 97.5], axis=1).T
+            
+            # Calculate R² score for linear regression
+            if model_type == 'linear':
+                r2 = 1 - np.sum((y - y_pred) ** 2) / np.sum((y - np.mean(y)) ** 2)
+            else:
+                r2 = None  # Not applicable for logistic regression
+            
+            # Create model summary
+            r2_str = f"{r2:.3f}" if r2 is not None else "N/A"
+            summary = (
+                f"Bayesian {model_type.capitalize()} Regression Results\n"
+                f"Number of observations: {len(y)}\n"
+                f"Number of features: {len(features)}\n"
+                f"R² Score: {r2_str}\n\n"
+                "Coefficients:\n"
+            )
+            
+            summary += f"{'Parameter':<20} {'Mean':>10} {'Std':>10}\n"
+            summary += "-" * 40 + "\n"
+            summary += f"{'Intercept':<20} {coef_means['intercept']:>10.3f} {coef_stds['intercept']:>10.3f}\n"
+            for feature in features:
+                summary += f"{feature:<20} {coef_means[feature]:>10.3f} {coef_stds[feature]:>10.3f}\n"
+            
+            # Store results
+            coefficients = {
+                name: (coef_means[name], coef_stds[name])
+                for name in ['intercept'] + features
+            }
+            
+            result = RegressionResult(
+                coefficients=coefficients,
+                predictions=y_pred,
+                prediction_intervals=pred_intervals,
+                r2_score=r2,
+                model_summary=summary
+            )
+            
+            self.regression_results[target] = result
+            return result
+
+    def plot_regression_results(
+        self,
+        target: str,
+        feature: Optional[str] = None,
+        show_intervals: bool = True
+    ) -> plt.Figure:
+        """
+        Plot regression results.
+        
+        Args:
+            target: Target variable name
+            feature: Optional feature to plot against (for 2D visualization)
+            show_intervals: Whether to show prediction intervals
+        """
+        if target not in self.regression_results:
+            raise ValueError(f"No regression results found for {target}")
+            
+        result = self.regression_results[target]
+        fig, ax = plt.subplots(figsize=(10, 6))
+        
+        if feature is not None:
+            # 2D visualization
+            x = self.data[feature].values
+            y = self.data[target].values
+            y_pred = result.predictions
+            
+            # Sort by x for clean visualization
+            sort_idx = np.argsort(x)
+            x = x[sort_idx]
+            y = y[sort_idx]
+            y_pred = y_pred[sort_idx]
+            
+            # Plot actual vs predicted
+            ax.scatter(x, y, alpha=0.5, label='Actual')
+            ax.plot(x, y_pred, 'r-', label='Predicted')
+            
+            if show_intervals and result.prediction_intervals is not None:
+                intervals = result.prediction_intervals[sort_idx]
+                ax.fill_between(x, intervals[:, 0], intervals[:, 1],
+                              alpha=0.2, color='r', label='95% PI')
+            
+            ax.set_xlabel(feature)
+            ax.set_ylabel(target)
+            
+        else:
+            # 1D visualization (actual vs predicted)
+            y = self.data[target].values
+            y_pred = result.predictions
+            
+            ax.scatter(y, y_pred, alpha=0.5)
+            
+            # Plot diagonal line
+            min_val = min(min(y), min(y_pred))
+            max_val = max(max(y), max(y_pred))
+            ax.plot([min_val, max_val], [min_val, max_val], 'r--',
+                   label='Perfect Prediction')
+            
+            ax.set_xlabel('Actual')
+            ax.set_ylabel('Predicted')
+        
+        ax.set_title(f'Regression Results for {target}')
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+        
+        return fig
+
+    def visualize_causal_graph(self, show_effects: bool = True) -> plt.Figure:
+        """Create a visualization of the causal graph with effect sizes."""
+        fig, ax = plt.subplots(figsize=(12, 8))
+        pos = nx.spring_layout(self.graph)
+        
+        # Draw nodes
+        nx.draw_networkx_nodes(self.graph, pos, ax=ax, node_color='lightblue',
+                             node_size=2000, alpha=0.7)
+        nx.draw_networkx_labels(self.graph, pos)
+        
+        # Draw edges with effect sizes
+        if show_effects:
+            edge_labels = {}
+            for u, v, data in self.graph.edges(data=True):
+                if 'effect_size' in data:
+                    edge_labels[(u, v)] = f"{data['effect_size']:.2f}"
+            
+            nx.draw_networkx_edge_labels(self.graph, pos, edge_labels=edge_labels)
+        
+        nx.draw_networkx_edges(self.graph, pos, ax=ax, edge_color='gray',
+                             arrowsize=20)
+        
+        # Add regression results if available
+        for target, result in self.regression_results.items():
+            if target in pos:
+                x, y = pos[target]
+                text = f"\nR² = {result.r2_score:.2f}" if result.r2_score else ""
+                ax.annotate(text, (x, y), xytext=(0, -20),
+                          textcoords="offset points", ha='center')
+        
+        ax.set_title("Causal Network Structure")
+        ax.axis('off')
+        
+        return fig

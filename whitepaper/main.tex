@@ -17,6 +17,7 @@
 % Define mathematical operators
 \DeclareMathOperator{\indegree}{in\text{-}degree}
 \DeclareMathOperator{\outdegree}{out\text{-}degree}
+\DeclareMathOperator{\logit}{logit}
 
 \theoremstyle{definition}
 \newtheorem{definition}{Definition}
@@ -82,6 +83,46 @@ where:
 \end{itemize}
 \end{definition}
 
+\subsection{Path Finding with Flow Types}
+\begin{definition}[Flow Types]
+We define three types of network flows:
+\begin{itemize}
+    \item Food Flow: $F = \{e \in E : e \in E_{\text{inv}}\}$
+    \item Service Flow: $S = \{e \in E : e \in E_{\text{serv}}\}$
+    \item Currency Flow: $C = \{e \in E : e \in E_{\text{curr}}\}$
+\end{itemize}
+\end{definition}
+
+\begin{definition}[Valid Path]
+For a flow type $\tau \in \{F, S, C\}$, a path $P = (v_1, \ldots, v_k)$ is valid if:
+\begin{itemize}
+    \item $\forall i \in [1,k-1], \exists e \in \tau : e = (v_i, v_{i+1})$
+    \item For $\tau = F$: $v_1 \in P$ (producers) and $v_k \in C$ (consumers)
+\end{itemize}
+\end{definition}
+
+\begin{definition}[Parallel Edge Combination]
+For parallel edges $E_{ij} = \{e_1, \ldots, e_n\}$ between nodes $i$ and $j$, their combined cost is:
+\begin{equation}
+    c(E_{ij}) = f(e_1, \ldots, e_n)
+\end{equation}
+where $f$ is a user-defined cost function, defaulting to:
+\begin{equation}
+    f(e_1, \ldots, e_n) = \frac{1}{n}\sum_{k=1}^n w(e_k)
+\end{equation}
+with $w(e)$ being the waste function of edge $e$.
+\end{definition}
+
+\begin{theorem}[Minimum Cost Path with Capacity]
+Given source nodes $S$, target nodes $T$, and capacity requirements $\kappa_v$ for nodes $v \in V$, the minimum cost path problem is:
+\begin{align*}
+    \min_{P \in \mathcal{P}} \quad & \sum_{(i,j) \in P} c(E_{ij}) \\
+    \text{s.t.} \quad & P \text{ is valid for flow type } \tau \\
+    & \sum_{e \in \delta^+(v)} \text{cap}(e) \geq \kappa_v \quad \forall v \in P
+\end{align*}
+where $\mathcal{P}$ is the set of all paths from $S$ to $T$, and $\delta^+(v)$ is the set of outgoing edges from node $v$.
+\end{theorem}
+
 \subsection{Waste Functions}
 We define three classes of waste functions:
 
@@ -135,6 +176,38 @@ For any transformation $T_f$, the total mass is conserved:
 \end{equation}
 where $w_f$ is the waste mass.
 \end{lemma}
+
+\subsection{Bayesian Regression Analysis}
+We extend our causal analysis with Bayesian regression to predict and analyze waste patterns:
+
+\begin{definition}[Bayesian Linear Regression]
+For target variable $y$ and features $X$, we model:
+\begin{align*}
+    y &\sim \mathcal{N}(\mu, \sigma^2) \\
+    \mu &= \alpha + X\beta \\
+    \alpha &\sim \mathcal{N}(0, 10^2) \\
+    \beta_j &\sim \mathcal{N}(0, 2^2) \\
+    \sigma &\sim \text{Half-Normal}(0, 1)
+\end{align*}
+\end{definition}
+
+\begin{definition}[Bayesian Logistic Regression]
+For binary outcomes, we use:
+\begin{align*}
+    y &\sim \text{Bernoulli}(p) \\
+    p &= \text{logit}^{-1}(\alpha + X\beta) \\
+    \alpha &\sim \mathcal{N}(0, 10^2) \\
+    \beta_j &\sim \mathcal{N}(0, 2^2)
+\end{align*}
+\end{definition}
+
+\begin{theorem}[Prediction Intervals]
+For new data point $x_*$, the 95\% prediction interval is:
+\begin{equation}
+    [\hat{y}_* \pm 1.96 \sqrt{\text{Var}(\alpha) + x_*^T \text{Cov}(\beta) x_* + \sigma^2}]
+\end{equation}
+where parameters are estimated from the posterior distribution.
+\end{theorem}
 
 \section{Results}
 \subsection{Network Analysis}
