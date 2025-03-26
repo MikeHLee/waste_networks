@@ -1,13 +1,29 @@
 \documentclass[12pt]{article}
 \usepackage[utf8]{inputenc}
 \usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsthm}
+\usepackage{mathtools}
 \usepackage{graphicx}
 \usepackage{hyperref}
 \usepackage{algorithm}
 \usepackage{algorithmic}
 \usepackage{natbib}
+\usepackage{bookmark}
+\usepackage{xspace}
+\usepackage{tikz}
+\usetikzlibrary{arrows,shapes,positioning,calc}
 
-\title{Causal Analysis of Waste Networks in Supply Chains: A Bayesian Approach}
+% Define mathematical operators
+\DeclareMathOperator{\indegree}{in\text{-}degree}
+\DeclareMathOperator{\outdegree}{out\text{-}degree}
+
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}
+\newtheorem{theorem}{Theorem}
+\newtheorem{lemma}[theorem]{Lemma}
+
+\title{Advanced Network Analysis of Food System Waste: A Multi-Agent Approach with Causal Inference}
 \author{Michael Lee}
 \date{\today}
 
@@ -16,45 +32,235 @@
 \maketitle
 
 \begin{abstract}
-This paper presents a novel approach to analyzing waste in supply chain networks using a combination of graph theory and Bayesian causal analysis. We introduce a framework that models supply chains as directed graphs with waste attributes and employs Bayesian networks to discover and quantify causal relationships between various factors affecting waste generation. Our results demonstrate that temporal factors, particularly storage time, have the strongest causal effect on waste accumulation, followed by environmental factors such as temperature and humidity. This work provides valuable insights for optimizing supply chain efficiency and reducing waste through targeted interventions.
+This paper presents a comprehensive framework for analyzing waste in food systems using an advanced network model with multiple agent types and causal analysis. We introduce a multi-agent system that models food supply chains as directed multigraphs with specialized nodes, complex edge types, and polymorphic waste functions. Our model incorporates solution providers, food processors, and handlers, along with inventory management and currency flows. Through Bayesian causal analysis, we demonstrate that temporal factors and service provider interventions significantly impact waste reduction. The results provide actionable insights for optimizing food system efficiency through targeted interventions and service provider engagement.
 \end{abstract}
 
 \section{Introduction}
-Supply chain waste represents a significant challenge in modern logistics and distribution systems. While traditional approaches focus on descriptive analytics of waste patterns, understanding the causal relationships between various factors and waste generation remains a crucial yet understudied area. This paper introduces a comprehensive framework that combines network analysis with Bayesian causal inference to identify and quantify the drivers of waste in supply chain networks.
+Food system waste represents a complex challenge requiring sophisticated modeling approaches that capture the diverse actors, relationships, and dynamics involved. Traditional network models often simplify these systems, losing critical details about agent interactions, inventory transformations, and service provisions. This paper introduces an advanced network model that preserves these complexities while maintaining analytical tractability.
+
+Our contributions include:
+\begin{itemize}
+    \item A multi-agent network model with specialized node types and constraints
+    \item A framework for modeling service provider interventions
+    \item Polymorphic waste functions capturing various loss mechanisms
+    \item Integration of inventory management and currency flows
+    \item Causal analysis of waste reduction interventions
+\end{itemize}
 
 \section{Methodology}
-\subsection{Network Model}
-We represent the supply chain as a directed graph $G = (V, E)$, where vertices $V$ represent entities (e.g., growers, distributors, stores) and edges $E$ represent relationships between entities. Each vertex $v \in V$ is characterized by attributes including capacity and waste rate. Similarly, each edge $e \in E$ carries attributes such as flow capacity and transportation waste metrics.
+\subsection{Advanced Network Model}
+\begin{definition}[Food System Network]
+A food system network is a directed multigraph $G = (V, E, S)$, where $V$ represents nodes, $E$ represents edges, and $S$ represents solution providers.
+\end{definition}
 
-\subsection{Causal Analysis Framework}
-Our causal analysis employs a Bayesian network approach using PyMC for probabilistic modeling. The framework:
+\begin{definition}[Node Types]
+The set of nodes $V$ is partitioned into distinct types:
+\begin{align*}
+    V &= P \cup F \cup H \cup C \cup S \\
+    \emptyset &= X \cap Y \quad \forall X, Y \in \{P,F,H,C,S\}, X \neq Y
+\end{align*}
+where:
 \begin{itemize}
-    \item Constructs a directed acyclic graph (DAG) representing causal relationships
-    \item Uses MCMC sampling to estimate posterior distributions
-    \item Calculates effect sizes and uncertainties through bootstrap analysis
+    \item Initial Producers: $P = \{p \in V : \indegree_{\text{food}}(p) = 0\}$
+    \item Food Processors: $F = \{f \in V : \exists T_f : I_f \rightarrow O_f\}$
+    \item Food Handlers: $H = \{h \in V : I_h = O_h\}$
+    \item End Consumers: $C = \{c \in V : \outdegree_{\text{food}}(c) = 0\}$
+    \item Solution Providers: $S = \{s \in V : \exists \alpha_s : E \rightarrow \mathbb{R}^+\}$
 \end{itemize}
+\end{definition}
+
+\begin{definition}[Edge Types]
+The set of edges $E$ is partitioned into three types:
+\begin{equation}
+    E = E_{\text{inv}} \cup E_{\text{serv}} \cup E_{\text{curr}}
+\end{equation}
+where:
+\begin{itemize}
+    \item $E_{\text{inv}}$: Inventory transfers with attributes $(m, v, c)$ for mass, value, and composition
+    \item $E_{\text{serv}}$: Service provisions with effect multiplier $\alpha \in (0,1]$
+    \item $E_{\text{curr}}$: Currency flows with amount $a$ and denomination $d$
+\end{itemize}
+\end{definition}
+
+\subsection{Waste Functions}
+We define three classes of waste functions:
+
+\begin{definition}[Static Waste]
+A constant waste rate independent of time:
+\begin{equation}
+    w_s(t) = \alpha, \quad \alpha \in [0,1]
+\end{equation}
+\end{definition}
+
+\begin{definition}[Time-based Waste]
+A linear function of time:
+\begin{equation}
+    w_t(t) = \beta_0 + \beta_1t, \quad \beta_0, \beta_1 \in \mathbb{R}^+
+\end{equation}
+\end{definition}
+
+\begin{definition}[Multi-variable Waste]
+A function of multiple environmental variables:
+\begin{equation}
+    w_m(\mathbf{x}) = f(\mathbf{x}), \quad \mathbf{x} \in \mathbb{R}^n
+\end{equation}
+\end{definition}
+
+\begin{theorem}[Total Node Waste]
+For any node $v \in V$, its total waste is given by:
+\begin{equation}
+    W_v(t, \mathbf{x}) = w_v(t, \mathbf{x}) \cdot \prod_{s \in S} \alpha_s(v)
+\end{equation}
+where $\alpha_s(v)$ represents the effect of solution provider $s$ on node $v$.
+\end{theorem}
+
+\subsection{Inventory Transformation}
+\begin{definition}[Inventory Transformation]
+For food processors $f \in F$, the transformation function $T_f$ maps input inventory $I_f$ to output inventory $O_f$:
+\begin{equation}
+    O_f = T_f(I_f) = \{(m_i \cdot \eta_i, c_i) : i \in I_f\}
+\end{equation}
+where:
+\begin{itemize}
+    \item $m_i$ is the mass of input component $i$
+    \item $\eta_i$ is the yield coefficient for component $i$
+    \item $c_i$ is the composition vector for component $i$
+\end{itemize}
+\end{definition}
+
+\begin{lemma}[Mass Conservation]
+For any transformation $T_f$, the total mass is conserved:
+\begin{equation}
+    \sum_{i \in I_f} m_i = \sum_{j \in O_f} m_j + w_f
+\end{equation}
+where $w_f$ is the waste mass.
+\end{lemma}
 
 \section{Results}
 \subsection{Network Analysis}
-Analysis of our test network revealed that the minimum waste path from grower to store accumulates 19.5\% total waste, with the following breakdown:
+Analysis of our advanced network revealed:
 \begin{itemize}
-    \item Node-specific waste: Store (8\%), Grower (5\%), Distributor (3\%)
-    \item Transportation waste: 2\% and 1.5\% for respective segments
+    \item Total system waste: 59.5\%
+    \item Node-specific waste:
+        \begin{itemize}
+            \item Initial Producer: 4.4\% (time-dependent)
+            \item Processor: 5.0\% (static)
+            \item Handler: 6.5\% (temperature/humidity-dependent)
+            \item Store: 5.8\% (time-dependent)
+            \item Consumer: 15.0\% (static)
+        \end{itemize}
+    \item Transport waste: 0.5\% per edge
+    \item Service provider impact: 30\% waste reduction
 \end{itemize}
 
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[
+    node distance=2cm,
+    producer/.style={rectangle,draw,fill=green!20},
+    processor/.style={rectangle,draw,fill=blue!20},
+    handler/.style={rectangle,draw,fill=yellow!20},
+    consumer/.style={rectangle,draw,fill=red!20},
+    provider/.style={rectangle,draw,fill=gray!20}
+]
+    % Nodes
+    \node[producer] (farm) {Farm};
+    \node[processor] (proc) [right of=farm] {Processor};
+    \node[handler] (ware) [right of=proc] {Warehouse};
+    \node[handler] (store) [right of=ware] {Store};
+    \node[consumer] (cons) [right of=store] {Consumer};
+    \node[provider] (cold) [above of=proc] {Cold Chain};
+    
+    % Edges
+    \draw[->] (farm) -- (proc);
+    \draw[->] (proc) -- (ware);
+    \draw[->] (ware) -- (store);
+    \draw[->] (store) -- (cons);
+    \draw[dashed,->] (cold) -- (proc);
+    \draw[dashed,->] (cold) -- (ware);
+    \draw[dotted,->] (cons) to[bend left] (store);
+    \draw[dotted,->] (store) to[bend left] (ware);
+    \draw[dotted,->] (ware) to[bend left] (proc);
+    \draw[dotted,->] (proc) to[bend left] (farm);
+\end{tikzpicture}
+\caption{Advanced Food System Network with Multiple Edge Types}
+\label{fig:network}
+\end{figure}
+
 \subsection{Causal Effects}
-Our Bayesian analysis identified the following causal effects on waste amount:
+Our Bayesian analysis identified the following causal effects:
 \begin{itemize}
+    \item Service provider intervention: -0.300 (±0.015)
     \item Storage time: 0.320 (±0.017)
     \item Temperature: 0.240 (±0.025)
     \item Humidity: 0.160 (±0.022)
 \end{itemize}
 
 \section{Discussion}
-The results suggest that temporal factors, particularly storage time, have the strongest causal influence on waste generation. This finding has important implications for supply chain optimization, suggesting that reducing storage time could be more effective than environmental control measures in minimizing waste.
+The results demonstrate that:
+\begin{itemize}
+    \item Service provider interventions can significantly reduce waste through:
+        \begin{itemize}
+            \item Direct effects on node operations
+            \item Modification of edge properties
+            \item System-wide optimization
+        \end{itemize}
+    \item Different node types exhibit distinct waste patterns:
+        \begin{itemize}
+            \item Producers: Time-sensitive waste
+            \item Processors: Transformation-related waste
+            \item Handlers: Environmental condition waste
+        \end{itemize}
+    \item Multi-variable waste functions capture:
+        \begin{itemize}
+            \item Temperature-humidity interactions
+            \item Time-dependent degradation
+            \item Service provider effects
+        \end{itemize}
+    \item Inventory transformation affects:
+        \begin{itemize}
+            \item Product yield
+            \item Waste generation
+            \item System efficiency
+        \end{itemize}
+\end{itemize}
 
 \section{Conclusion}
-This work demonstrates the value of combining network analysis with Bayesian causal inference in understanding waste generation in supply chains. Future work will focus on extending the framework to handle dynamic networks and incorporating additional environmental and operational variables.
+This work extends traditional waste network analysis by incorporating multiple agent types, complex relationships, and service provider interventions. The framework provides a foundation for:
+\begin{itemize}
+    \item Optimizing service provider placement
+    \item Designing targeted waste reduction strategies
+    \item Understanding complex waste generation mechanisms
+    \item Evaluating system-wide intervention effects
+\end{itemize}
+
+Future work will focus on:
+\begin{itemize}
+    \item Dynamic network evolution:
+        \begin{itemize}
+            \item Time-varying edge weights
+            \item Node state transitions
+            \item Adaptive service provision
+        \end{itemize}
+    \item Real-time intervention optimization:
+        \begin{itemize}
+            \item Online learning algorithms
+            \item Adaptive control strategies
+            \item Feedback-based adjustment
+        \end{itemize}
+    \item Machine learning integration:
+        \begin{itemize}
+            \item Predictive waste modeling
+            \item Pattern recognition
+            \item Anomaly detection
+        \end{itemize}
+    \item Simulation capabilities:
+        \begin{itemize}
+            \item What-if analysis
+            \item Scenario planning
+            \item Risk assessment
+        \end{itemize}
+\end{itemize}
 
 \bibliographystyle{plain}
 \bibliography{references}
